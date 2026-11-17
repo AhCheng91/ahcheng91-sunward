@@ -20,32 +20,42 @@ Then open http://localhost:8080 in desktop Chrome: the mouse steers, W tucks, S 
 
 ## How it plays
 
-Your goal is to fly far enough and high enough to reach the three beacon rings, in order, before the daylight fades. Speed is energy: dive from altitude to build it, pull up to trade it back for height, and let thermals sweep you up for free. Sparkling motes drift through the air — harvest them to fill the boost meter, then spend it with Space for an extra surge. Threading a ring turns the dusk back a notch and lights the next one further out. Storms brew off the dunes and turbulent patches shake the glider, while the sky runs through its colours into night, its last rays your guide. The runs ends three ways — daylight gone before the rings, all three rings threaded and the dusk lifted, or a hard landing — and each earns its score.
+Your goal is to stay aloft and fly sunward as far as you can before the daylight runs out: dive for speed, pull up to trade that speed for height, and never let the dune sea claim your paper wing.
+
+- **Energy model** — the glider trades two currencies against each other: velocity and altitude. Diving builds speed, pulling up spends it to climb, and scraping a hilltop or landing resets you for the loss.
+- **Thermals** — columns of rising air drift across the dunes. Ride one and you climb for free, the surest way to gain height without giving up speed.
+- **Motes and boost** — motes of light float along your route. Collect them to fill the boost meter, then spend a full bar with Space for a burst of speed through still air.
+- **Beacon rings** — three rings hang low over the dunes, waiting to be threaded. Every ring you fly through buys back daylight, pushing the moment of dusk farther out.
+- **Storms and sky rays** — the dusk sky is not silent: storms churn and claw at you, while stray sky rays offer a bright updraft if you can catch one.
+- **Three endings and the score** — your run ends one of three ways, and the results screen tallies how far you came, how many rings you threaded and how much daylight you bought. Beat your best, ring by ring.
 
 ## What is in the box
 
-- `game/index.html` — the page and its import map
-- `game/src/` — the game itself, one module per job:
-  - `config.js` — every tunable number and colour
-  - `rng.js` — seeded, deterministic randomness
-  - `input.js` — mouse and keyboard
-  - `glider.js` — the flight model
-  - `camera.js` — the follow camera
-  - `terrain.js` — the dune sea
-  - `dusk.js` — the falling daylight
-  - `sky.js` — the sky and its rays
-  - `thermals.js` — rising columns of air
-  - `motes.js` — the drifting sparkles that fuel boost
-  - `beacons.js` — the three beacon rings
-  - `hazards.js` — storms and turbulence
-  - `hud.js` — the heads-up display and score
-  - `audio.js` — synthesised sound
-  - `main.js` — the loop that ties it together
-- `game/vendor/three` — three.js r187, vendored and imported through the map
-- `main.ts` — builds the entry: copies `game/` and `screenshots/` into the output and writes `dossier.json`
-- `serve.ts` — the local static server the run block above uses
-- `screenshots/` — real frames of the game, the first the cover
+- `game/index.html` — the page: canvas, HUD and the import map that loads the modules and three.js.
+- `game/src/` — the game itself, as plain ES modules:
+  - `config.js` — every tunable number and colour, in one place
+  - `main.js` — the game: scene, loop and the run's state machinery
+  - `glider.js` — the paper glider's flight model, energy and controls
+  - `input.js` — mouse and keyboard, read every frame
+  - `camera.js` — the chase camera and its feel
+  - `terrain.js` — the rolling dune sea and the ground you must not touch
+  - `dusk.js` — the daylight meter that counts your time down
+  - `sky.js` — the dusk sky, the sun and the rays
+  - `thermals.js` — the rising columns of air
+  - `hazards.js` — the storms that claw at you
+  - `beacons.js` — the three rings, placed and threaded
+  - `motes.js` — the motes of light between the rings
+  - `audio.js` — synthesised wind through the wing, notes for rings and motes
+  - `hud.js` — the heads-up display of speed, height and daylight
+  - `rng.js` — deterministic randomness, so every run is reproducible
+- `game/vendor/three` — three.js r187, vendored so nothing is fetched from a CDN.
+- `main.ts` — builds the make.fun entry directory and `dossier.json`.
+- `serve.ts` — the local static server for `game/`.
+- `screenshots/` — real frames saved from the running game, the first the cover.
 
 ## Notes
 
-Nothing is fetched at runtime: the game serves its own files and data URI sound, never the network. There is no build step — open `game/index.html` through the server and it runs. The art is original and the audio is synthesised in code. The screenshots are real frames rendered in headless Chromium, not mock-ups.
+- **No network at runtime** — the game loads nothing over the wire: every script, library, asset and sound is a file in `game/`, served by `serve.ts` or opened straight off disk.
+- **No build step** — `game/` is plain static files; the game is `index.html` plus standard ES modules behind an import map.
+- **Original art and synthesised sound** — the dunes, glider, sky and light are drawn from scratch in WebGL, and every sound is synthesised, none of it sampled from elsewhere.
+- **Screenshots are real frames** — the shots in `screenshots/` were captured from the actual rendering engine, not mocked.

@@ -26,9 +26,15 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const STEP = 1 / 60;
 const SHOT_BEACON_BACK = 120;  // ?shot=beacon starts the wing this far short of the gate
 const SHOT_BEACON_CLEAR = 2;   // ...and flies this far above the ring, so tryLight lights on approach
-const SHOT_BEACON_FREEZE = 60; // ...and must stay clear of dunes this far past the gate for the freeze
+const SHOT_BEACON_POSE = 55;   // ...then holds the wing on the lit gate this many steps for the freeze
+const SHOT_PLAY_ALT_LOW = 60;  // shot=play autopilot flares hard below this altitude (m)
+const SHOT_PLAY_ALT_HIGH = 150; // ...and tucks softly above this altitude (m)
+const SHOT_PLAY_ALT_HOLD = 105; // ...and settles the cruise band on this mid ceiling (m)
 const SHOT_RESULTS_HOLD = 4;   // ?shot=results parks at each gate this many steps
-const SHOT_RESULTS_MOTES = 14; // ...and gathers this many motes before the last gate lights
+const SHOT_RESULTS_MOTES = 0; // ...and gathers this many motes before the last gate lights
+const SHOT_RESULTS_MOTE_HOLD = 2; // ...lingering this many steps on each swept mote
+const SUN_HEADING_RAD = 118 * Math.PI / 180; // the sun's azimuth, as glider.js uses it
+const SHOT_SCENIC_MOTES = 4;   // ?shot=scenic gathers this many motes before the pose holds
 
 const errors = [];
 addEventListener('error', (e) => {
@@ -85,10 +91,14 @@ let lastTime = performance.now();
 let frames = 0, fps = 60;
 
 let shotPlay = false, shotDone = false;
-let script = null;          // 'beacon' | 'results' | null: running shot driver
+let script = null;          // 'beacon' | 'results' | 'scenic' | null: running shot driver
 let scriptGate = 0;
 let scriptHold = 0;
 let moteCursor = 0;         // ?shot=results sweeps motes from here onward
+let sweepTarget = 0;        // ?shot=results motes the wing has flown over
+let sweepMote = null;       // ...the mote the wing is parked on right now
+let scenicStep = 0;         // ?shot=scenic prelude step counter
+let photoPose = null;       // ...the pose the scenic wing returns to
 const shotSteer = {
   steerX: 0, steerY: 0, tuck: false, flare: false, boost: false,
   started: false, paused: false, clicked: false, pointerX: 0, pointerY: 0,
@@ -144,12 +154,13 @@ function placeBeaconRun() {
   return true;
 }
 
-// Drives the two scripted shots through the same simStep path the real game
-// uses: ?shot=beacon flies straight into its gate and holds the ring altitude
-// (the autopilot banks gently and keeps the nose up, so beacons.tryLight fires
-// for real); ?shot=results stations the glider at each gate in turn so tryLight
-// lights them truly, and sweeps a short mote line between gates so the win card
-// shows a harvest.
+// Drives the scripted shots through the same simStep path the real game uses:
+// ?shot=beacon flies straight into its gate and holds the ring altitude (the
+// autopilot banks gently and keeps the nose up, so beacons.tryLight fires for
+// real); ?shot=results sweeps a couple of mote clusters on the way in, then
+// stations the glider at each gate in turn so tryLight lights them truly and the
+// win card shows a harvest; ?shot=scenic parks the wing on the first gate for one
+// step, picks up a few motes, then holds a photo pose while the camera orbits.
 function driveShot() {
   if (script === 'beacon') {
     const gate = beacons.list[scriptGate];
@@ -160,24 +171,110 @@ function driveShot() {
     } else {
       script = null;
     }
+  } else if (script === 'scenic') {
+    driveScenicShot();
   } else if (script === 'results') {
-    const gate = beacons.list[scriptGate];
-    if (gate && !gate.lit) {
-      placeGliderAt(gate.x, gate.ringY, gate.z, 0);
-      scriptHold += 1;
-      if (scriptHold >= SHOT_RESULTS_HOLD) {
-        scriptHold = 0;
-        scriptGate += 1;
-        if (scriptGate >= beacons.total) script = null;
-      }
-    } else if (gate && gate.lit) {
-      scriptGate += 1;
-      scriptHold = 0;
-      if (scriptGate >= beacons.total) script = null;
-    } else {
-      script = null;
-    }
+    if (sweepTarget < SHOT_RESULTS_MOTES) driveResultsMoteSweep();
+    else driveResultsGatePark();
   }
+}
+
+// Sweeps a couple of mote clusters on the way to the gates so the win card shows
+// a real harvest. The wing parks on each mote for a beat while the sim's own
+// motes.collect() (called from simStep) does the picking, so every mote on the
+// card was genuinely gathered on the real game path.
+function driveResultsMoteSweep() {
+  if (!sweepMote || !sweepMote.active) {
+    sweepMote = nextActiveMote();
+    scriptHold = 0;
+    if (!sweepMote) { sweepTarget = SHOT_RESULTS_MOTES; return; }
+    sweepTarget += 1;
+  }
+  const p = sweepMote.sprite.position;
+  placeGliderAt(p.x, p.y, p.z, glider.heading);
+  scriptHold += 1;
+  if (scriptHold >= SHOT_RESULTS_MOTE_HOLD) {
+    scriptHold = 0;
+    sweepMote = null;
+  }
+}
+
+// Rotates through the mote list from the last swept one, so consecutive motes
+// come from the same cluster and the sweep really crosses a cluster of them.
+// Unsafe parking spots (rocks, low crests, storm cells, rays) are skipped so
+// the scripted glide never crashes.
+function nextActiveMote() {
+  const items = motes.items;
+  for (let i = 0; i < items.length; i += 1) {
+    const index = (moteCursor + i) % items.length;
+    const item = items[index];
+    if (!item.active || !moteIsSafe(item)) continue;
+    moteCursor = index + 1;
+    return item;
+  }
+  return null;
+}
+
+// A mote is a safe place to park the wing for a scripted sweep when it floats
+// clear of the rocks, well off the ground, and out of any storm cell or ray.
+function moteIsSafe(item) {
+  const p = item.sprite.position;
+  if (terrain.isRock(p.x, p.z, p.y)) return false;
+  if (p.y - terrain.heightAt(p.x, p.z) < 12) return false;
+  const hazard = hazards.sample(p);
+  return (hazard.storm ?? 0) < 0.15 && !hazard.ray;
+}
+
+// Stations the wing inside each unlit gate in turn so beacons.update's own
+// tryLight lights them truly; once the last gate is lit driveShot stops and the
+// simStep ending check raises the results card.
+function driveResultsGatePark() {
+  const gate = beacons.list[scriptGate];
+  if (gate && !gate.lit) {
+    placeGliderAt(gate.x, gate.ringY, gate.z, 0);
+    scriptHold += 1;
+    if (scriptHold >= SHOT_RESULTS_HOLD) {
+      scriptHold = 0;
+      scriptGate += 1;
+      if (scriptGate >= beacons.total) script = null;
+    }
+  } else if (gate && gate.lit) {
+    scriptGate += 1;
+    scriptHold = 0;
+    if (scriptGate >= beacons.total) script = null;
+  } else {
+    script = null;
+  }
+}
+
+// The scenic shot's prelude: park the wing inside the first gate for one step so
+// beacons.tryLight fires, then sweep a few motes, then settle at the photo pose
+// and hold it while the camera orbits.
+function driveScenicShot() {
+  if (scenicStep === 0) {
+    // No gate light here: the lit shaft reads as a translucent tent in the lens.
+    placeGliderAt(0, terrain.heightAt(0, 0) + 120, 0, SUN_HEADING_RAD - 0.34);
+  } else if (scenicStep <= SHOT_SCENIC_MOTES) {
+    const item = scenicMoteTarget(scenicStep);
+    if (item) {
+      const p = item.sprite.position;
+      placeGliderAt(p.x, p.y, p.z, glider.heading);
+    }
+  } else if (photoPose) {
+    placeGliderAt(photoPose.x, photoPose.y, photoPose.z, photoPose.heading);
+  }
+  scenicStep += 1;
+}
+
+// The n-th live mote, walking the list in creation order (cluster by cluster).
+function scenicMoteTarget(n) {
+  let seen = 0;
+  for (const item of motes.items) {
+    if (!item.active) continue;
+    seen += 1;
+    if (seen === n) return item;
+  }
+  return null;
 }
 
 function enterFlight() {
@@ -195,13 +292,28 @@ function steerShot() {
   const dist = Math.hypot(dx, dz) || 1e-4;
   let turn = Math.atan2(dx, dz) - glider.heading;
   turn = Math.atan2(Math.sin(turn), Math.cos(turn));
-  // Aim a little to the right of the sun (so it sits off-centre, not in the lens)
-  // and hold a low band over the dunes rather than climbing to the sun.
-  shotSteer.steerX = clamp(turn * 1.1 + 0.22, -1, 1);
+  // Aim a little right of the sun (so it clears the lens) and roll gently: the
+  // small sine wobble keeps the wing alive instead of flying rigid. Bank does
+  // not spend altitude in this model, so turning is free.
+  const sway = Math.sin(simElapsed * 1.7) * 0.07;
+  shotSteer.steerX = clamp(turn * 0.55 + 0.22 + sway, -1, 1);
+  // Hold an altitude band: flare (nose up) hard when the wing is low, tuck a
+  // little when it climbs too high, and between them ease back to a mid ceiling.
+  // The nose is never pushed so hard that the wing stalls and dives.
   const alt = glider.altitude;
-  shotSteer.steerY = clamp((95 - alt) / 55, -0.55, 0.55);
-  shotSteer.tuck = alt > 150;
-  shotSteer.flare = alt < 70;
+  if (alt < SHOT_PLAY_ALT_LOW) {
+    shotSteer.steerY = 0.45;
+    shotSteer.flare = true;
+    shotSteer.tuck = false;
+  } else if (alt > SHOT_PLAY_ALT_HIGH) {
+    shotSteer.steerY = -0.15;
+    shotSteer.tuck = true;
+    shotSteer.flare = false;
+  } else {
+    shotSteer.steerY = clamp((SHOT_PLAY_ALT_HOLD - alt) / 160, -0.3, 0.3);
+    shotSteer.flare = false;
+    shotSteer.tuck = false;
+  }
 }
 
 function simStep(dt) {
@@ -263,7 +375,7 @@ function enterEnded(verdict) {
     verdict,
     motes: collectedMotes,
     beacons: beacons.litCount() + ' / ' + beacons.total,
-    time: timeLeft + 's',
+    time: timeLeft,
     total: score,
     best,
   });
@@ -389,12 +501,20 @@ if (shot === 'play') {
   enterFlight();
   sound.start();
   script = 'scenic';
+  scenicStep = 0;
+  photoPose = {
+    x: glider.position.x, y: glider.position.y, z: glider.position.z,
+    heading: glider.heading,
+  };
 } else if (shot === 'results') {
   enterFlight();
   sound.start();
   script = 'results';
   scriptGate = 0;
   scriptHold = 0;
+  moteCursor = 0;
+  sweepTarget = 0;
+  sweepMote = null;
 } else {
   state = 'title';
 }

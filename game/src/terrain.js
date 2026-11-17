@@ -196,7 +196,7 @@ export function createTerrain(scene, rng, options = {}) {
       let facing = 0; // flat ground carries no horizontal heading
       if (horizLen > 1e-6) facing = (nx * sunHorizX + nz * sunHorizZ) / horizLen;
       // Broad stylised tone: 0.10 far side of a ridge, 1.00 sun side, 0.55 flat.
-      const tone = 0.55 + 0.45 * facing;
+      const tone = 0.55 - 0.45 * facing; // the sun is behind the ridge line from this view
 
       // Three flat tones divided by narrow (0.05 wide) transitions, and a thin
       // blade of crest light only where the face steps fully into the sun.

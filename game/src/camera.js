@@ -19,6 +19,9 @@ const GROUND_CLEARANCE = 9;   // the lens never sinks into a dune
 const FOV_BOOST_DEG = 4;      // extra lens width at full speed
 const TITLE_ORBIT_RATE = 0.07; // radians per second, a gentle drift
 const TITLE_LOOK_DISTANCE = 400;
+const TITLE_RADIUS = 120;          // title stand-off: the dunes fill the lower frame
+const TITLE_HEIGHT = 34;           // lens height above the terrain origin
+const TITLE_SUN_OFFSET_RAD = 0.9;  // the title camera starts this far around from the sun
 
 export class ChaseCamera {
   constructor(camera, terrain) {
@@ -34,8 +37,9 @@ export class ChaseCamera {
       Math.sin(SUN_ELEVATION_DEG * DEG),
       Math.sin(SUN_AZIMUTH_DEG * DEG) * Math.cos(SUN_ELEVATION_DEG * DEG),
     ).multiplyScalar(TITLE_LOOK_DISTANCE);
-    // Open opposite the sun so the poster starts looking into the glow.
-    this._titleAngle = SUN_AZIMUTH_DEG * DEG + Math.PI;
+    // Start the orbit beside the sun's azimuth rather than opposite it, so the
+    // sun sits to one side of the wordmark instead of behind the tower.
+    this._titleAngle = SUN_AZIMUTH_DEG * DEG + TITLE_SUN_OFFSET_RAD;
     this._fov = camera.fov;
     this._axis = new Vector3();
     this._up = new Vector3();
@@ -108,11 +112,10 @@ export class ChaseCamera {
   titleOrbit(dt) {
     this._titleAngle += TITLE_ORBIT_RATE * Math.max(0, dt);
     const cam = this.camera;
-    const radius = CONFIG.camera.titleDistance;
     cam.position.set(
-      Math.cos(this._titleAngle) * radius,
-      this.terrain.heightAt(0, 0) + CONFIG.camera.titleHeight,
-      Math.sin(this._titleAngle) * radius,
+      Math.cos(this._titleAngle) * TITLE_RADIUS,
+      this.terrain.heightAt(0, 0) + TITLE_HEIGHT,
+      Math.sin(this._titleAngle) * TITLE_RADIUS,
     );
     cam.lookAt(this._titleTarget);
   }

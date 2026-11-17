@@ -115,7 +115,9 @@ export function createThermals(scene, rng, terrain) {
     columnData.base[c] = base;
     columnData.top[c] = top;
     columns.push({ x: cx, z: cz, base, top, radius });
-    group.add(buildHazeColumn(cx, cz, base, top, radius));
+    // The haze column is left out: an additive cylinder this size reads as a
+    // translucent tent in front of the lens. The rising dust carries the column.
+    void buildHazeColumn;
   }
 
   const total = count * dustPerColumn;

@@ -5,11 +5,12 @@ import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildDossier } from './vendor/makefun-game.ts';
 
+const repository = import.meta.dirname;
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 mkdirSync(out, { recursive: true });
 
-cpSync(join('game'), join(out, 'game'), { recursive: true });
-if (existsSync(join('screenshots'))) cpSync(join('screenshots'), join(out, 'screenshots'), { recursive: true });
+cpSync(join(repository, 'game'), join(out, 'game'), { recursive: true });
+if (existsSync(join(repository, 'screenshots'))) cpSync(join(repository, 'screenshots'), join(out, 'screenshots'), { recursive: true });
 
 const dossier = buildDossier(out, {
   text_max_bytes: 163840,
